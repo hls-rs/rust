@@ -296,6 +296,18 @@ impl IntrinsicCallMethods<'tcx> for Builder<'a, 'll, 'tcx> {
                 }
             }
 
+            _ if name_str.starts_with("fpga_add_i") => {
+                // Parse the bit width from the intrinsic name suffix (e.g. "fpga_add_i13" -> 13).
+                let width: u64 = name_str["fpga_add_i".len()..]
+                    .parse()
+                    .unwrap_or_else(|_| bug!("invalid fpga_add_i intrinsic: `{}`", name_str));
+                let narrow_ty = self.type_ix(width);
+                let a = self.trunc(args[0].immediate(), narrow_ty);
+                let b = self.trunc(args[1].immediate(), narrow_ty);
+                let sum = self.add(a, b);
+                self.zext(sum, self.type_i128())
+            }
+
             _ if name_str.starts_with("simd_") => {
                 match generic_simd_intrinsic(self, name, callee_ty, args, ret_ty, llret_ty, span) {
                     Ok(llval) => llval,

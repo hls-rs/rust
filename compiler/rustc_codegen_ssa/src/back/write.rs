@@ -233,10 +233,21 @@ impl ModuleConfig {
 
             // Copy what clang does by turning on loop vectorization at O2 and
             // slp vectorization at O3.
+            //
+            // FPGA HLS targets (fpga32/fpga64): never run LLVM auto-vectorization.
+            // The fpga datalayout advertises huge vector types (v16..v1024) and a
+            // wide integer set (i256..i4096); at -O2/-O3 the LLVM Loop/SLP
+            // Vectorizer reads that as enormous vector registers and explodes
+            // (runaway IR → OOM-kill / SIGSEGV; the crashing pass is "Loop
+            // Vectorization"). CPU SIMD vectorization is meaningless for HLS
+            // anyway — Vitis re-optimizes the kernel from scratch — so gating it
+            // off for fpga* targets is both the bug fix and semantically correct.
             vectorize_loop: !sess.opts.cg.no_vectorize_loops
+                && !sess.target.arch.starts_with("fpga")
                 && (sess.opts.optimize == config::OptLevel::Default
                     || sess.opts.optimize == config::OptLevel::Aggressive),
             vectorize_slp: !sess.opts.cg.no_vectorize_slp
+                && !sess.target.arch.starts_with("fpga")
                 && sess.opts.optimize == config::OptLevel::Aggressive,
 
             // Some targets (namely, NVPTX) interact badly with the

@@ -549,6 +549,15 @@ impl BuilderMethods<'a, 'tcx> for Builder<'a, 'll, 'tcx> {
             return;
         }
 
+        // FPGA HLS targets (fpga32 / fpga64) feed their IR to a Vitis-bundled
+        // LLVM 7 verifier, which rejects empty `!range` metadata (`!{iN x, iN x}`).
+        // Skip range metadata entirely on these targets — the value-range
+        // optimization isn't useful for HLS anyway.
+        let arch = &self.sess().target.arch;
+        if arch == "fpga32" || arch == "fpga64" {
+            return;
+        }
+
         unsafe {
             let llty = self.cx.val_ty(load);
             let v = [

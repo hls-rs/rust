@@ -10,7 +10,7 @@ use rustc_middle::mir;
 use rustc_middle::mir::interpret::{ConstValue, Pointer, Scalar};
 use rustc_middle::ty::layout::TyAndLayout;
 use rustc_middle::ty::Ty;
-use rustc_target::abi::{Abi, Align, LayoutOf, Size};
+use rustc_target::abi::{Abi, Align, Integer, LayoutOf, Primitive, Size};
 
 use std::fmt;
 
@@ -197,6 +197,28 @@ impl<'a, 'tcx, V: CodegenObject> OperandRef<'tcx, V> {
             {
                 assert_eq!(offset.bytes(), 0);
                 self.val
+            }
+
+            // FPGA HLS: `#[rustc_apint(N)]` newtype. The struct's scalar ABI is `iN`
+            // (narrower than the source-level field type, which is the declared `u128`/etc.).
+            // Sign- or zero-extend the value to match the field's expected width so that
+            // downstream code sees the field at its declared type.
+            (OperandValue::Immediate(llval), Abi::Scalar(scalar))
+                if matches!(scalar.value, Primitive::Int(Integer::IArbitrary(_), _))
+                    && self.layout.fields.count() == 1 =>
+            {
+                assert_eq!(offset.bytes(), 0);
+                let signed = match scalar.value {
+                    Primitive::Int(_, s) => s,
+                    _ => false,
+                };
+                let dest_ty = bx.cx().immediate_backend_type(field);
+                let extended = if signed {
+                    bx.sext(llval, dest_ty)
+                } else {
+                    bx.zext(llval, dest_ty)
+                };
+                OperandValue::Immediate(extended)
             }
 
             // Extract a scalar component from a pair.

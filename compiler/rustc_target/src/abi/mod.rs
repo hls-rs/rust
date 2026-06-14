@@ -536,6 +536,11 @@ pub enum Integer {
     I32,
     I64,
     I128,
+    /// Arbitrary-precision integer used for FPGA HLS targets.
+    /// Represents `iN` in LLVM IR, where N is the bit width (1..=4096).
+    /// Constructed via the `#[rustc_apint(N)]` attribute on a `#[repr(transparent)]`
+    /// newtype wrapping a built-in integer.
+    IArbitrary(u32),
 }
 
 impl Integer {
@@ -546,6 +551,13 @@ impl Integer {
             I32 => Size::from_bytes(4),
             I64 => Size::from_bytes(8),
             I128 => Size::from_bytes(16),
+            // Round up to the next byte boundary, then to the next power of 2 bytes
+            // (matching LLVM's storage layout for `iN`).
+            IArbitrary(n) => {
+                let bytes = ((n + 7) / 8) as u64;
+                let pow2 = bytes.next_power_of_two();
+                Size::from_bytes(pow2)
+            }
         }
     }
 
@@ -558,6 +570,15 @@ impl Integer {
             I32 => dl.i32_align,
             I64 => dl.i64_align,
             I128 => dl.i128_align,
+            // Pick the alignment of the smallest standard integer that fits.
+            IArbitrary(n) => match n {
+                0 => dl.i8_align,
+                1..=8 => dl.i8_align,
+                9..=16 => dl.i16_align,
+                17..=32 => dl.i32_align,
+                33..=64 => dl.i64_align,
+                _ => dl.i128_align,
+            },
         }
     }
 

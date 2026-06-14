@@ -4,7 +4,7 @@
 
 use rustc_middle::mir;
 use rustc_middle::mir::interpret::{InterpResult, Scalar};
-use rustc_target::abi::LayoutOf;
+use rustc_target::abi::{Abi, Integer, LayoutOf, Primitive};
 
 use super::{InterpCx, Machine};
 
@@ -202,13 +202,48 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
                     _ => (dest, None),
                 };
 
-                for (i, operand) in operands.iter().enumerate() {
-                    let op = self.eval_operand(operand, None)?;
-                    // Ignore zero-sized fields.
-                    if !op.layout.is_zst() {
-                        let field_index = active_field_index.unwrap_or(i);
-                        let field_dest = self.place_field(dest, field_index)?;
-                        self.copy_op(op, field_dest)?;
+                // FPGA HLS: `#[rustc_apint(N)]` newtype with one field whose
+                // declared type is wider than the iN backing storage. Mirror
+                // the codegen-time path in `compiler/rustc_codegen_ssa/src/mir/rvalue.rs`:
+                // truncate the operand to the destination's narrow scalar
+                // width and write directly, rather than doing a per-field
+                // copy that would store a wider value into a narrower slot
+                // and trip the const interpreter's bounds check.
+                let mut handled_apint = false;
+                if let (1, Abi::Scalar(scalar)) = (operands.len(), &dest.layout.abi) {
+                    if let Primitive::Int(Integer::IArbitrary(_), _) = scalar.value {
+                        let op = self.eval_operand(&operands[0], None)?;
+                        let val = self.read_immediate(op)?;
+                        if let super::Immediate::Scalar(super::ScalarMaybeUninit::Scalar(s)) =
+                            *val
+                        {
+                            if let Ok(bits) = s.to_bits_or_ptr(val.layout.size, self) {
+                                let dest_size = dest.layout.size;
+                                let mask = if dest_size.bits() >= 128 {
+                                    u128::MAX
+                                } else {
+                                    (1u128 << dest_size.bits()) - 1
+                                };
+                                let truncated: Scalar<M::PointerTag> =
+                                    Scalar::from_uint(bits & mask, dest_size);
+                                let mu: super::ScalarMaybeUninit<M::PointerTag> =
+                                    truncated.into();
+                                self.write_scalar(mu, dest)?;
+                                handled_apint = true;
+                            }
+                        }
+                    }
+                }
+
+                if !handled_apint {
+                    for (i, operand) in operands.iter().enumerate() {
+                        let op = self.eval_operand(operand, None)?;
+                        // Ignore zero-sized fields.
+                        if !op.layout.is_zst() {
+                            let field_index = active_field_index.unwrap_or(i);
+                            let field_dest = self.place_field(dest, field_index)?;
+                            self.copy_op(op, field_dest)?;
+                        }
                     }
                 }
             }

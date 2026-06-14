@@ -54,6 +54,13 @@ impl IntegerExt for Integer {
             (I32, true) => tcx.types.i32,
             (I64, true) => tcx.types.i64,
             (I128, true) => tcx.types.i128,
+            // `IArbitrary` has no surface Rust type. It is only produced by the
+            // `#[rustc_apint]` attribute path and should never reach `to_ty`,
+            // which is used for enum discriminants and similar contexts that
+            // require a Rust-visible integer type.
+            (Integer::IArbitrary(_), _) => {
+                bug!("Integer::IArbitrary cannot be converted back to a Rust type")
+            }
         }
     }
 
@@ -939,6 +946,26 @@ impl<'tcx> LayoutCx<'tcx, TyCtxt<'tcx>> {
                             def,
                             st,
                         ),
+                    }
+
+                    // FPGA HLS: `#[rustc_apint(N)]` overrides the scalar's integer
+                    // representation to `iN` and resizes the layout accordingly. The
+                    // attribute is only valid on `#[repr(transparent)]` newtypes whose
+                    // single field is a built-in integer.
+                    if let Some(width) = tcx.layout_apint_width(def.did, substs) {
+                        if let Abi::Scalar(ref mut scalar) = st.abi {
+                            scalar.value = Int(Integer::IArbitrary(width), false);
+                            let mask = if width >= 128 {
+                                u128::MAX
+                            } else {
+                                (1u128 << width) - 1
+                            };
+                            scalar.valid_range = 0..=mask;
+                            let new_int = Integer::IArbitrary(width);
+                            st.size = new_int.size();
+                            st.align = new_int.align(dl);
+                            st.largest_niche = Niche::from_scalar(dl, Size::ZERO, scalar.clone());
+                        }
                     }
 
                     return Ok(tcx.intern_layout(st));

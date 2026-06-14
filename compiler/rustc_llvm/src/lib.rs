@@ -170,4 +170,11 @@ pub fn initialize_available_targets() {
         LLVMInitializeWebAssemblyAsmPrinter,
         LLVMInitializeWebAssemblyAsmParser
     );
+    // Xilinx HLS FPGA backend: IR-only target, no AsmPrinter/Parser.
+    init_target!(
+        llvm_component = "fpga",
+        LLVMInitializeFPGATargetInfo,
+        LLVMInitializeFPGATarget,
+        LLVMInitializeFPGATargetMC
+    );
 }

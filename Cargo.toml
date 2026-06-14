@@ -69,6 +69,18 @@ overflow-checks = false
 # per-crate configuration isn't specifiable in the environment.
 codegen-units = 10000
 
+# The fpga64 target's wide datalayout (i256..i4096) + Xilinx LLVM at opt-level=3
+# makes a single `core`/`alloc` function blow LLVM memory past 31GB -> OOM
+# (SIGKILL), even at high codegen-units (the blowup is one function; CGUs split
+# by fn). opt-level=1 compiles cleanly. core/alloc are inlined into kernels and
+# re-optimized by Vitis HLS, so their own opt-level does not affect the
+# synthesized hardware. Needed for the fpga64 no-std std build to complete.
+[profile.release.package.core]
+opt-level = 1
+
+[profile.release.package.alloc]
+opt-level = 1
+
 # These dependencies of the standard library implement symbolication for
 # backtraces on most platforms. Their debuginfo causes both linking to be slower
 # (more data to chew through) and binaries to be larger without really all that

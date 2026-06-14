@@ -587,7 +587,11 @@ impl Step for Cargo {
                 path: "src/tools/cargo",
                 is_optional_tool: false,
                 source_type: SourceType::Submodule,
-                extra_features: Vec::new(),
+                // Build cargo's OpenSSL from vendored source (openssl-src) rather
+                // than the host's system OpenSSL. The pinned openssl-sys 0.9.58
+                // (rust 1.51 era) cannot build against OpenSSL 3.0, so on hosts
+                // with OpenSSL 3.x `x.py dist` otherwise fails to produce cargo.
+                extra_features: vec!["vendored-openssl".to_string()],
             })
             .expect("expected to build -- essential tool");
 

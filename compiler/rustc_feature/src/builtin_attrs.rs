@@ -486,6 +486,12 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
         "the `#[rustc_layout_scalar_valid_range_end]` attribute is just used to enable \
         niche optimizations in libcore and will never be stable",
     ),
+    // Ungated: `#[rustc_apint(N)]` is a stable part of the FPGA HLS target's
+    // public surface (it lowers `BitInt<N>`/`BitUint<N>` to a native LLVM `iN`).
+    // Registering it ungated lets the HLS libraries use it without
+    // `#![feature(rustc_attrs)]` / RUSTC_BOOTSTRAP, so the toolchain works on a
+    // normal (non-nightly) channel.
+    ungated!(rustc_apint, AssumedUsed, template!(List: "N")),
     rustc_attr!(
         rustc_nonnull_optimization_guaranteed, AssumedUsed, template!(Word),
         "the `#[rustc_nonnull_optimization_guaranteed]` attribute is just used to enable \

@@ -344,6 +344,35 @@ pub fn from_fn_attrs(cx: &CodegenCx<'ll, 'tcx>, llfn: &'ll Value, instance: ty::
             );
         }
     }
+
+    // For FPGA HLS targets (`fpga{32,64}-*`), mirror what Xilinx's
+    // open-source HLS clang emits: stamp `fpga.demangled.name=<source name>`
+    // on every named function. The source name is what Vitis HLS'
+    // set_top / set_directive_* lookups key off — independent of the
+    // LLVM IR symbol (which may be Rust-mangled). Mirrors
+    // `clang/lib/CodeGen/CGXlxAttr.cpp`'s equivalent set from the C++
+    // AST identifier. Skip closures / synthetic defs that don't have
+    // a user-visible source name (`item_name` ICEs on those).
+    let target_arch = &cx.tcx.sess.target.arch;
+    if target_arch == "fpga32" || target_arch == "fpga64" {
+        let def_id = instance.def_id();
+        let def_kind = cx.tcx.def_kind(def_id);
+        use rustc_hir::def::DefKind;
+        let has_source_name = matches!(
+            def_kind,
+            DefKind::Fn | DefKind::AssocFn | DefKind::Ctor(..) | DefKind::Variant
+        );
+        if has_source_name {
+            let source_name = cx.tcx.item_name(def_id);
+            let cstr = CString::new(&source_name.as_str()[..]).unwrap();
+            llvm::AddFunctionAttrStringValue(
+                llfn,
+                llvm::AttributePlace::Function,
+                const_cstr!("fpga.demangled.name"),
+                &cstr,
+            );
+        }
+    }
 }
 
 pub fn provide_both(providers: &mut Providers) {

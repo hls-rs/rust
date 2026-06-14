@@ -504,6 +504,14 @@ pub(crate) unsafe fn optimize(
         llvm::LLVMWriteBitcodeToFile(llmod, out.as_ptr());
     }
 
+    // FPGA HLS targets: run the stream-rewrite half of VitisPrep before
+    // the opt pipeline. Without this, SROA + inline of `Stream<S>::read`
+    // (where `S` is a struct) splits the volatile struct load into
+    // per-field loads and the marker→load adjacency we rely on is lost.
+    if cgcx.target_arch == "fpga32" || cgcx.target_arch == "fpga64" {
+        llvm::LLVMRustVitisEarlyPrep(llmod);
+    }
+
     if let Some(opt_level) = config.opt_level {
         if should_use_new_llvm_pass_manager(config) {
             let opt_stage = match cgcx.lto {
@@ -696,6 +704,24 @@ pub(crate) unsafe fn codegen(
 
         if cgcx.msvc_imps_needed {
             create_msvc_imps(cgcx, llcx, llmod);
+        }
+
+        // FPGA HLS post-processing. Runs once after the standard
+        // optimisation pipeline and before any output emission, so both
+        // `--emit=llvm-ir` text and bitcode see the transformed module.
+        //
+        //   1. VitisPrep — rewrite Stream read/write marker calls into
+        //      `llvm.fpga.fifo.{pop,push}` intrinsics, attach
+        //      stream_interface operand bundles to top params, mark
+        //      pipelined functions, and emit `!llvm.loop` unroll
+        //      metadata on marker-tagged loops.
+        //   2. StripIncompatibleAttrs — drop LLVM-11-only attributes
+        //      the Vitis-bundled LLVM-7 toolchain rejects (must run
+        //      after VitisPrep so any attrs on the new intrinsic
+        //      declarations also get scrubbed).
+        if cgcx.target_arch == "fpga32" || cgcx.target_arch == "fpga64" {
+            llvm::LLVMRustVitisPrep(llmod);
+            llvm::LLVMRustVitisStripIncompatibleAttrs(llmod);
         }
 
         // A codegen-specific pass manager is used to generate object

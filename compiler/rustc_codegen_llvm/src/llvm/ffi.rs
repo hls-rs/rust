@@ -2319,6 +2319,24 @@ extern "C" {
     pub fn LLVMRustUnsetComdat(V: &Value);
     pub fn LLVMRustSetModulePICLevel(M: &Module);
     pub fn LLVMRustSetModulePIELevel(M: &Module);
+    /// FPGA HLS targets only: rewrite Vitis-HLS marker calls
+    /// (`__vitis_stream_*`, `__vitis_top_*`, `__vitis_loop_unroll`)
+    /// into the FIFO intrinsics, sideeffect/operand-bundle pairs,
+    /// pipeline attributes, and `!llvm.loop` metadata that Vitis HLS
+    /// expects. Replaces the standalone `vitis-narrow` opt plugin.
+    /// Must run *before* `LLVMRustVitisStripIncompatibleAttrs` so the
+    /// scrubber has a chance to remove any LLVM-11-only attributes
+    /// introduced on the new intrinsic declarations.
+    pub fn LLVMRustVitisPrep(M: &Module);
+    /// FPGA HLS targets only: stream read/write rewrites that need to run
+    /// before SROA / inline fragment a struct-typed Stream value into
+    /// per-field loads. Called from `optimize()` *before* the standard
+    /// opt pipeline.
+    pub fn LLVMRustVitisEarlyPrep(M: &Module);
+    /// FPGA HLS targets only: strip LLVM-11 attributes the Vitis-bundled
+    /// LLVM-7 verifier does not recognise (replaces the per-example sed
+    /// scrub previously baked into Makefiles).
+    pub fn LLVMRustVitisStripIncompatibleAttrs(M: &Module);
     pub fn LLVMRustModuleBufferCreate(M: &Module) -> &'static mut ModuleBuffer;
     pub fn LLVMRustModuleBufferPtr(p: &ModuleBuffer) -> *const u8;
     pub fn LLVMRustModuleBufferLen(p: &ModuleBuffer) -> usize;

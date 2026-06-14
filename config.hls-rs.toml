@@ -1,0 +1,85 @@
+# Canonical build config for the Xilinx-HLS rustc (the "hls-rs" toolchain).
+#
+# `config.toml` itself is gitignored (upstream convention — local build config),
+# so THIS file is the tracked source of truth. To build the toolchain:
+#   cp config.hls-rs.toml config.toml    # then optionally set [install] prefix
+#   ./x.py dist        # combined installer + fpga64 rust-std component
+#   ./x.py install     # (with [install] prefix set, for a local install)
+#
+# The Xilinx HLS patches are already committed into src/llvm-project/.
+# x.py builds LLVM from that source tree in release mode.
+
+[llvm]
+# Host target (where rustc will run)
+targets = "X86"
+
+# Xilinx FPGA target (fpga32 / fpga64)
+experimental-targets = "FPGA"
+
+# Faster build
+ninja = true
+
+# Release build, no assertions (rustc runs fast, matches how upstream distributes)
+optimize = true
+# Production: assertions off. (They were briefly ON to diagnose the rustdoc/SLP
+# mem2reg crash and to validate the libVXXPrep struct-remap rewrite is UB-free;
+# both done — shipped IR is identical, assertions only added checks.)
+assertions = false
+
+# Keep llvm-config version check lenient (Xilinx-patched version string)
+version-check = false
+
+[build]
+# Do NOT let x.py manage/reset the llvm-project submodule — we track a local
+# `develop` branch there (Vitis backport + license cleanup); a submodule update
+# would reset it to the pinned commit and wipe local work.
+submodules = false
+
+# Vendor all Cargo deps under <src>/vendor so remap-debuginfo also strips the
+# build-machine CARGO_HOME (~/.cargo) paths from shipped binaries. bootstrap.py
+# manages .cargo/config automatically when this is true — do NOT hand-create
+# .cargo/config.toml (bootstrap rmtree's .cargo when vendor=false).
+vendor = true
+
+# Build (and dist) the host plus the fpga64 HLS target. fpga64 is a no-std
+# target (see [target.fpga64-unknown-unknown] below), so x.py ships only
+# core/alloc/compiler_builtins for it — no full std, no use-time build-std.
+target = ["x86_64-unknown-linux-gnu", "fpga64-unknown-unknown"]
+
+# Produce a combined installer (one install.sh: rustc + cargo + host std + the
+# dev tools that build). cargo is built with vendored OpenSSL via the
+# src/bootstrap/tool.rs patch (host OpenSSL 3.0 is too new for the pinned
+# openssl-sys 0.9.58). The fpga64 std is a separate per-target component
+# (rust-std-...-fpga64-...tar.xz), installed like `rustup target add`.
+# End users: install the combined tarball + the fpga64 rust-std tarball, then
+# `cargo build --target fpga64-unknown-unknown` (no nightly, no -Z build-std,
+# no env). docs=false avoids a no-std `cargo rustdoc --package` bug + unneeded
+# fpga64 docs; tools=[] drops rls/rustfmt/clippy/miri (also see [dist] below).
+extended = true
+tools = []
+docs = false
+
+[rust]
+# Remap build-machine paths out of the shipped binaries: rustc source →
+# /rustc/<hash>, cargo deps → /cargo. Without this the dev's /home/... paths
+# get baked into file!()/panic strings + debuginfo and leak in distribution.
+remap-debuginfo = true
+
+[target.fpga64-unknown-unknown]
+# fpga64 is a bare (no-OS) target: ship core/alloc only, like thumbv*-none-eabi.
+# Without this x.py tries to build full std (test/backtrace) for fpga64.
+no-std = true
+
+[dist]
+# Skip (don't panic on) tools that fail to build. rls/rustfmt/clippy/miri embed
+# cargo-as-a-library and hit the same openssl-sys 0.9.58 vs OpenSSL 3.0 wall on
+# 3.x hosts; we don't ship them. cargo itself builds via the vendored-openssl
+# patch in src/bootstrap/tool.rs. This lets the combined (extended) installer
+# bundle rustc + cargo + std and just skip the dev tools we don't need.
+missing-tools = true
+
+# Install destination. Default prefix is /usr/local (needs root). For a local
+# install, uncomment and point at a writable dir, then `./x.py install`:
+# [install]
+# prefix = "/path/to/hls-rs-toolchain"
+# sysconfdir = "etc"

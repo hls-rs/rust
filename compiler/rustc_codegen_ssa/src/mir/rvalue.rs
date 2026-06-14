@@ -15,7 +15,7 @@ use rustc_middle::ty::layout::{HasTyCtxt, TyAndLayout};
 use rustc_middle::ty::{self, adjustment::PointerCast, Instance, Ty, TyCtxt};
 use rustc_span::source_map::{Span, DUMMY_SP};
 use rustc_span::symbol::sym;
-use rustc_target::abi::{Abi, Int, LayoutOf, Variants};
+use rustc_target::abi::{Abi, Int, Integer, LayoutOf, Primitive, Variants};
 
 impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
     pub fn codegen_rvalue(
@@ -123,6 +123,37 @@ impl<'a, 'tcx, Bx: BuilderMethods<'a, 'tcx>> FunctionCx<'a, 'tcx, Bx> {
                     }
                     _ => (dest, None),
                 };
+
+                // FPGA HLS: `#[rustc_apint(N)]` newtype with one field whose
+                // declared type is wider than the iN backing storage. Truncate
+                // (or extend) the field operand to iN and write it directly into
+                // the struct's storage, rather than projecting to the field.
+                // Note: this branch only fires for actual `Aggregate` rvalues. MIR
+                // optimization frequently lowers `BitUint13(_3)` to a direct field
+                // assignment `(_0.0) = _3`, which goes through `project_field` +
+                // `store` instead. Field-projection writes are handled by
+                // `project_field` for rustc_apint structs.
+                if let (1, Abi::Scalar(scalar)) = (operands.len(), &dest.layout.abi) {
+                    if let Primitive::Int(Integer::IArbitrary(width), signed) = scalar.value {
+                        let op = self.codegen_operand(&mut bx, &operands[0]);
+                        if let OperandValue::Immediate(v) = op.val {
+                            let dest_ty = bx.cx().type_ix(width as u64);
+                            let src_bits = bx.cx().int_width(bx.cx().val_ty(v));
+                            let coerced = if src_bits == width as u64 {
+                                v
+                            } else if src_bits > width as u64 {
+                                bx.trunc(v, dest_ty)
+                            } else if signed {
+                                bx.sext(v, dest_ty)
+                            } else {
+                                bx.zext(v, dest_ty)
+                            };
+                            OperandValue::Immediate(coerced).store(&mut bx, dest);
+                            return bx;
+                        }
+                    }
+                }
+
                 for (i, operand) in operands.iter().enumerate() {
                     let op = self.codegen_operand(&mut bx, operand);
                     // Do not generate stores and GEPis for zero-sized fields.

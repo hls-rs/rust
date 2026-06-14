@@ -138,6 +138,10 @@ pub fn check_intrinsic_type(tcx: TyCtxt<'_>, it: &hir::ForeignItem<'_>) {
             }
         };
         (n_tps, inputs, output, hir::Unsafety::Unsafe)
+    } else if name_str.starts_with("fpga_add_i") {
+        // FPGA HLS narrow-integer add: always (u128, u128) -> u128.
+        // The bit width is encoded in the name suffix (e.g. "fpga_add_i13").
+        (0, vec![tcx.types.u128, tcx.types.u128], tcx.types.u128, hir::Unsafety::Unsafe)
     } else {
         let unsafety = intrinsic_operation_unsafety(intrinsic_name);
         let (n_tps, inputs, output) = match intrinsic_name {

@@ -1676,3 +1676,22 @@ LLVMRustComputeLTOCacheKey(RustStringRef KeyOut, const char *ModId, LLVMRustThin
 
   LLVMRustStringWriteImpl(KeyOut, Key.c_str(), Key.size());
 }
+
+// ---------------------------------------------------------------------------
+// FPGA HLS target post-processing
+// ---------------------------------------------------------------------------
+//
+// The Vitis HLS toolchain consumes bitcode through an LLVM-7 fork that does
+// not recognise several LLVM 11 attributes. Strip those attribute kinds from
+// every function declaration / definition / parameter / return so the
+// downstream `llvm-as` (LLVM 7) verifier accepts the IR without an external
+// `sed` step.
+//
+// This consolidates the scrub list previously maintained in the per-example
+// Makefile (using_arbitrary_precision_arith/Makefile et al.) into the
+// compiler itself.
+
+// LLVMRustVitisStripIncompatibleAttrs is implemented directly in
+// llvm-wrapper/vxx/VXXIRDowngrader.cpp (exported under that FFI name), so this
+// static implementation has been removed to avoid duplicate symbols at link
+// time.

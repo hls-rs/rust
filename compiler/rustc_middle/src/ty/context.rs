@@ -1067,6 +1067,69 @@ impl<'tcx> TyCtxt<'tcx> {
         self.layout_interner.intern(layout, |layout| self.arena.alloc(layout))
     }
 
+    /// Returns the bit width N specified by a `#[rustc_apint(N)]` attribute,
+    /// if present. Used by FPGA HLS targets to lower a `#[repr(transparent)]`
+    /// newtype as a narrow `iN` integer in LLVM IR.
+    ///
+    /// The attribute argument may be either an integer literal (e.g.
+    /// `#[rustc_apint(13)]`) or an identifier matching one of the type's
+    /// const-generic parameters (e.g. `#[rustc_apint(N)]` on
+    /// `BitUint<const N: u32>`). In the latter case the value is resolved
+    /// from the supplied `substs`.
+    pub fn layout_apint_width(
+        self,
+        def_id: DefId,
+        substs: crate::ty::subst::SubstsRef<'tcx>,
+    ) -> Option<u32> {
+        let attrs = self.get_attrs(def_id);
+        let attr = attrs.iter().find(|a| self.sess.check_name(a, sym::rustc_apint))?;
+        for meta in attr.meta_item_list().expect("rustc_apint takes args") {
+            // Integer literal: use it directly.
+            if let Some(lit) = meta.literal() {
+                if let ast::LitKind::Int(n, _) = lit.kind {
+                    return Some(n as u32);
+                }
+            }
+            // Identifier: resolve to a const-generic param of the same name and
+            // look up the concrete value from `substs`.
+            if let Some(ident) = meta.ident() {
+                let generics = self.generics_of(def_id);
+                for param in &generics.params {
+                    if param.name == ident.name
+                        && matches!(param.kind, ty::GenericParamDefKind::Const)
+                    {
+                        // If `substs` doesn't yet bind a concrete value (e.g.
+                        // when computing the layout of the generic type itself
+                        // for diagnostics or pre-monomorphisation MIR queries),
+                        // bail out — callers fall back to the original layout
+                        // and the override only fires for concrete instantiations.
+                        if let Some(arg) = substs.get(param.index as usize) {
+                            if let GenericArgKind::Const(ct) = arg.unpack() {
+                                if let Some(val) = ct
+                                    .try_eval_usize(self, ty::ParamEnv::reveal_all())
+                                {
+                                    return Some(val as u32);
+                                }
+                            }
+                        }
+                        return None;
+                    }
+                }
+                span_bug!(
+                    attr.span,
+                    "rustc_apint: identifier `{}` does not name a const-generic \
+                     parameter of the annotated type",
+                    ident.name
+                );
+            }
+            span_bug!(
+                attr.span,
+                "rustc_apint expects an integer literal or const-generic identifier"
+            );
+        }
+        span_bug!(attr.span, "no arguments to `rustc_apint` attribute");
+    }
+
     /// Returns a range of the start/end indices specified with the
     /// `rustc_layout_scalar_valid_range` attribute.
     pub fn layout_scalar_valid_range(self, def_id: DefId) -> (Bound<u128>, Bound<u128>) {

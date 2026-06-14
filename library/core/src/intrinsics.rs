@@ -1673,6 +1673,14 @@ extern "rust-intrinsic" {
     #[rustc_const_stable(feature = "const_int_wrapping", since = "1.40.0")]
     pub fn wrapping_mul<T: Copy>(a: T, b: T) -> T;
 
+    /// FPGA HLS: compute `(a + b) mod 2^13`, emitting a native `i13` add in LLVM IR.
+    ///
+    /// Arguments are received as `u128`, truncated to `i13`, added, and zero-extended
+    /// back to `u128`. The intrinsic exists to expose narrow-bitwidth integer
+    /// arithmetic to the Xilinx HLS backend. It is only valid on FPGA targets.
+    #[cfg(not(bootstrap))]
+    pub fn fpga_add_i13(a: u128, b: u128) -> u128;
+
     /// Computes `a + b`, saturating at numeric bounds.
     ///
     /// The stabilized versions of this intrinsic are available on the integer

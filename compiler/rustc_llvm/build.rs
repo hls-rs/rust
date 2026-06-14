@@ -86,6 +86,7 @@ fn main() {
         "nvptx",
         "hexagon",
         "riscv",
+        "fpga",
     ];
 
     let mut version_cmd = Command::new(&llvm_config);
@@ -178,6 +179,23 @@ fn main() {
         .file("llvm-wrapper/ArchiveWrapper.cpp")
         .file("llvm-wrapper/CoverageMappingWrapper.cpp")
         .file("llvm-wrapper/Linker.cpp")
+        // vxx/: the integrated Vitis-HLS prep passes (formerly the separate
+        // libVXXPrep.so). Compiled straight into librustc_driver — no dlopen,
+        // single-binary toolchain.
+        .file("llvm-wrapper/vxx/VXXPrep.cpp")
+        .file("llvm-wrapper/vxx/vxx_prep.cpp")
+        .file("llvm-wrapper/vxx/vxx_common.cpp")
+        .file("llvm-wrapper/vxx/VXXShared.cpp")
+        .file("llvm-wrapper/vxx/VXXIRDowngrader.cpp")
+        .file("llvm-wrapper/vxx/maxi.cpp")
+        .file("llvm-wrapper/vxx/loop.cpp")
+        .file("llvm-wrapper/vxx/dsp_fft.cpp")
+        .file("llvm-wrapper/vxx/dataflow_kpn.cpp")
+        .file("llvm-wrapper/vxx/axilite_mem.cpp")
+        .file("llvm-wrapper/vxx/struct_layout.cpp")
+        .file("llvm-wrapper/vxx/stream_fifo.cpp")
+        .file("llvm-wrapper/vxx/axis.cpp")
+        .include("llvm-wrapper/vxx")
         .cpp(true)
         .cpp_link_stdlib(None) // we handle this below
         .compile("llvm-wrapper");

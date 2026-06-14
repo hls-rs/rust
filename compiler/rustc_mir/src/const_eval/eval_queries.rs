@@ -45,6 +45,17 @@ fn eval_body_using_ecx<'mir, 'tcx>(
         ecx.tcx.def_kind(cid.instance.def_id())
     );
     let layout = ecx.layout_of(body.return_ty().subst(tcx, cid.instance.substs))?;
+    // NOTE: For `#[rustc_apint(N)]` types the const interpreter sees the
+    // correct narrow layout here (e.g. `BitInt<20>` → 4 bytes), but a
+    // const-fn body like `Self { value: 0 }` is lowered by MIR to a direct
+    // field assignment `(_0.0: i128) = const 0_i128`, which bypasses the
+    // step.rs Aggregate apint-trunc path and triggers an out-of-bounds
+    // write of the wider i128 source into the narrower iN slot. The
+    // workaround used in `vitis-hls` is to expose `BitInt::zero()` /
+    // `BitUint::zero()` etc. as runtime functions instead of `pub const`s
+    // — full const-eval support would require teaching the place-projection
+    // machinery (place_field) to substitute the parent's iN layout when
+    // descending into an apint single field.
     assert!(!layout.is_unsized());
     let ret = ecx.allocate(layout, MemoryKind::Stack);
 

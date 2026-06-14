@@ -162,6 +162,10 @@ impl BaseTypeMethods<'tcx> for CodegenCx<'ll, 'tcx> {
         self.isize_ty
     }
 
+    fn type_ix(&self, num_bits: u64) -> &'ll Type {
+        unsafe { llvm::LLVMIntTypeInContext(self.llcx, num_bits as libc::c_uint) }
+    }
+
     fn type_f32(&self) -> &'ll Type {
         unsafe { llvm::LLVMFloatTypeInContext(self.llcx) }
     }
